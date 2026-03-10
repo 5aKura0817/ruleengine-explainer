@@ -146,11 +146,16 @@ def batch_translate(output_file: str = None, limit: int = 5, all_rules: bool = F
     print(f"  共转译 {len(all_enabled_rules)} 条规则")
 
 
-def export_html(output_file: str = "rules_report.html") -> None:
-    """Fetch all enabled rules and export as a single self-contained HTML file."""
+def export_html(output_file: str = "rules_report.html", limit: int = 0) -> None:
+    """Fetch enabled rules and export as a single self-contained HTML file.
+
+    Args:
+        output_file: Output HTML file path.
+        limit: Maximum number of rules to include. 0 means all rules.
+    """
     client = APIClient()
 
-    # Collect all enabled rule summaries through pagination
+    # Collect enabled rule summaries through pagination
     all_rule_summaries = []
     page_num = 1
     page_size = 100
@@ -176,11 +181,19 @@ def export_html(output_file: str = "rules_report.html") -> None:
         if len(all_rule_summaries) >= total:
             break
 
+        # Stop early if we already have enough for the limit
+        if limit > 0 and len(all_rule_summaries) >= limit:
+            break
+
         page_num += 1
 
     if not all_rule_summaries:
         print("No enabled rules found")
         sys.exit(1)
+
+    # Apply limit
+    if limit > 0:
+        all_rule_summaries = all_rule_summaries[:limit]
 
     print(f"Found {len(all_rule_summaries)} enabled rules. Fetching details...")
 
@@ -231,8 +244,9 @@ if __name__ == '__main__':
     batch_parser.add_argument('--all', action='store_true', help='Translate ALL enabled rules (ignore --number)')
 
     # HTML export command
-    html_parser = subparsers.add_parser('html', help='Export all enabled rules as a single HTML file')
+    html_parser = subparsers.add_parser('html', help='Export enabled rules as a single HTML file')
     html_parser.add_argument('-o', '--output', default='rules_report.html', help='Output HTML file (default: rules_report.html)')
+    html_parser.add_argument('-n', '--limit', type=int, default=0, help='Max number of rules to export (default: 0 = all rules)')
     
     args = parser.parse_args()
     
@@ -243,6 +257,6 @@ if __name__ == '__main__':
     elif args.command == 'batch':
         batch_translate(args.output, args.number, args.all)
     elif args.command == 'html':
-        export_html(args.output)
+        export_html(args.output, args.limit)
     else:
         parser.print_help()
