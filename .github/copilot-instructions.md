@@ -4,6 +4,45 @@
 
 Rule Engine Interface Data Translation Tool: A system that fetches rules via API, retrieves detailed rule strategy policies, translates the API response data into readable text format, and generates summaries with tags.
 
+## Project Structure
+
+```
+.
+├── ruleengine/            # Core package
+│   ├── __init__.py
+│   ├── config.py          # Configuration management (env vars)
+│   ├── api_client.py      # API client for rule engine
+│   ├── translator.py      # Rule translation logic (ASCII tree renderer)
+│   └── html_exporter.py   # Interactive HTML report generator
+├── main.py                # CLI entry point (subcommands: translate, list, export)
+├── requirements.txt
+├── .env.example
+└── .github/
+    └── copilot-instructions.md
+```
+
+## Architecture
+
+**Single-Stage Pipeline:**
+1. **API Retrieval** — `api_client.py` fetches rule data via REST API
+2. **Translation** — `translator.py` converts JSON to human-readable text with ASCII tree conditions
+3. **Export** — `main.py` writes plaintext and/or calls `html_exporter.py` for HTML report
+
+**Module Responsibilities:**
+
+- **`config.py`** — Reads `NCS_USER_TOKEN`, `TEAM_ID`, `BASE_URL` from `.env` / environment
+- **`api_client.py`**
+  - `get_rule_list(page, size)` — Paginated rule list, filters disabled rules server-side (`disabled=false`)
+  - `get_rule_detail(rule_id)` — Full rule JSON including strategies
+- **`translator.py`**
+  - `RuleTranslator` — Extracts fields, formats metadata, delegates strategy rendering
+  - `StrategyParser` — Recursively parses condition node tree; `nodeType=1` → `[且]`, `nodeType=2` → `[或]`, `nodeType=-1` → leaf
+- **`html_exporter.py`**
+  - `HtmlExporter.generate(rules_data)` — Produces self-contained HTML string
+  - `_render_card()` — Single rule card (header-top + header-meta two-row layout)
+  - `_render_leaf()` — Leaf condition row with threshold-collapse wrapper
+  - `_css()` / `_js()` — Inline styles and JS (`toggleCard`, `expandAll`, `collapseAll`, `applyFilters`, `toggleThreshold`, `toggleThresholdCollapse`)
+
 ## API Configuration
 
 ### Base URL
@@ -15,36 +54,22 @@ https://data.ct108.net/ncs-ruleengine-api
 
 All API requests require:
 
-1. **Teamid Header**: Default `Teamid: 93` (add to request headers)
-2. **Authentication Cookie**: 
-   - Name: `ncs-user-token`
-   - Value: `eyJ0eXAiOiJKV1QiLCJ0eXBlIjoiSldUIiwiYWxnIjoiSFMyNTYifQ.eyJ1aWQiOiJGRUEzNjhCNjNCNkNERDdFOUMxQzU3OUYxRjlFREJGOCIsInJlcXVlc3RfdXVpZCI6IiIsImVuYWJsZSI6MSwiZG9tYWluIjoiZGF0YS5jdDEwOC5uZXQiLCJndWlkIjpudWxsLCJvcmlHdWlkIjpudWxsLCJmdWxsbmFtZSI6IkQyMDE3NEQzOERFNzk0N0QyRTc3QzU0QTBFRkM0NEIxIiwiZXhwIjoyMDg3ODc4ODY0LCJ1c2VybmFtZSI6IkI2MkIxMTUzQzhFNkQ5MUY3MjA5RTU2RThENEJBNDRGIn0.at6118GorFosuq660EEeJZgiTy1VGxpEKzWhiQqVMpo_1st`
-   - Note: Token expires at 2066-05-27 (Unix timestamp: 2087878864)
+1. **Teamid Header**: Default `Teamid: 93`
+2. **Authentication Cookie**: `ncs-user-token=<JWT>` — Token expires 2066-05-27 (Unix: 2087878864), no renewal needed in the near term
 
-Example request headers:
+Example:
 ```
 Teamid: 93
 Cookie: ncs-user-token=<token_value>
 ```
 
+Credentials are loaded from `.env` — never hardcode them.
+
 ## API Endpoints
 
 ### Rules List (Paginated)
 ```
-GET /admin/rule/page
-```
-
-**Parameters:**
-- `pageNum`: Page number (1-indexed)
-- `pageSize`: Number of rules per page
-- `disabled`: Filter by status — pass `false` to return only enabled rules (server-side filtering)
-
-**Example:**
-```
-GET https://data.ct108.net/ncs-ruleengine-api/admin/rule/page?pageNum=1&pageSize=50&disabled=false
-Headers:
-  Teamid: 93
-  Cookie: ncs-user-token=<token>
+GET /admin/rule/page?pageNum={n}&pageSize={s}&disabled=false
 ```
 
 ### Rule Details
@@ -52,60 +77,19 @@ Headers:
 GET /admin/rule/{ruleId}
 ```
 
-**Parameters:**
-- `ruleId`: The rule ID (corresponds to `id` field from paginated rules list)
+### Rule Detail Response Structure
 
-**Example:**
-```
-GET https://data.ct108.net/ncs-ruleengine-api/admin/rule/1082
-Headers:
-  Teamid: 93
-  Cookie: ncs-user-token=<token>
-```
+- **Basic Info**: `ruleName`, `id`, `comment`, `sourceId`, `sourceName`
+- **Timing**: `startTime`, `endTime`, `createTime`, `updateTime` (timestamps in ms)
+- **Creator**: `createBy`, `updateBy` (user objects with `fullname`, `username`)
+- **`outputFields`**: List of output fields — `fieldCode`, `fieldName`, `valueType` / `valueTypeName`
+- **`outputMessages`**: Alert messages — cooldown (`cdTime`, `cdFields`), robots, message templates
+- **`strategies`**: Nested rule logic
+  - `strategies.base` — Array of condition groups (usually one root node)
+  - `strategies.additional` — Array of additional condition groups (omitted from output if empty)
+  - Each node: `nodeType` (`1`=AND, `2`=OR, `-1`=leaf), `data.fieldName`, `data.fieldCode`, `data.operatorName`, `data.threshold`, `children[]`
 
-## Architecture
-
-The application translates rule API response into Tab1 "规则配置" (Rule Configuration) format:
-
-**Single-Stage Pipeline:**
-1. **API Retrieval**: Fetch rule detail via `/admin/rule/{ruleId}`
-2. **Translation**: Convert JSON response to human-readable "规则配置" text format matching the UI display
-
-## Rule Detail Response Structure
-
-Each rule detail response (`GET /admin/rule/{ruleId}`) contains:
-
-- **Basic Info**: ruleName, id, comment, sourceId, sourceName
-- **Timing**: startTime, endTime, createTime, updateTime
-- **Creator**: createBy, updateBy (user objects)
-- **outputFields**: List of output data fields with fieldCode, fieldName, valueType
-- **outputMessages**: Alert/notification messages triggered by the rule, including:
-  - Cooldown configuration (cdTime, cdFields)
-  - Associated robots/systems (robots, robotNames)
-  - Message templates
-- **strategies**: Complex nested rule logic with base and additional criteria
-  - `strategies.base`: Array of condition groups (usually one)
-  - `strategies.additional`: Array of additional condition groups
-  - Each condition node contains:
-    - `data.fieldName` / `data.fieldCode`: Field being evaluated
-    - `data.operatorName`: Human-readable operator (e.g., "等于", "不为空")
-    - `data.threshold`: The comparison value (parameter)
-    - `children`: Sub-conditions for nested logic
-
-## Implementation Notes
-
-- Store the Teamid and authentication token in configuration (environment variables or config file) rather than hardcoding
-- Consider token expiration and implement refresh/renewal logic before the token expires
-- The `strategies` field contains complex nested rule definitions with base and additional criteria
-- Each rule can have multiple output messages with different trigger conditions
-- Handle field value types: NUMBER, STRING, etc. (valueTypeName provides Chinese display names)
-- When listing rules, filter out disabled rules (disabled: true) to show only active rules
-
-## Translation Output Format - "规则配置" Tab Only
-
-Convert rule JSON into text format matching the management UI's Tab1 display:
-
-**Exact Output Format:**
+## Translation Output Format
 
 ```
 规则名称    {ruleName}
@@ -113,46 +97,31 @@ Convert rule JSON into text format matching the management UI's Tab1 display:
 数据源      {sourceName}
 
 基础条件①
-  {fieldName}({fieldCode})      {operatorName}      {threshold}
-  且
-  {fieldName}({fieldCode})      {operatorName}      {threshold}
-  [继续显示其他条件，以"且"连接]
+  └─[且]
+     ├─ {fieldName}({fieldCode})      {operatorName}      {threshold}
+     └─ {fieldName}({fieldCode})      {operatorName}      {threshold}
 
 附加条件②
-  [如果有additional条件，同样显示；如果无则不显示此段]
+  └─[且]
+     └─ {fieldName}({fieldCode})      {operatorName}      {threshold}
+  [无 additional 条件时不显示此段]
 
 生效时间③
-  {startTime} - {endTime}     (HH:MM:SS 格式)
+  {startTime} - {endTime}     (HH:MM:SS)
 
 规则说明
   {comment}
 
 创建人    {creatorFullname}({creatorUsername})
-创建时间   {formatCreatedDate} {formatCreatedTime}
-最后更新   {formatUpdatedDate} {formatUpdatedTime}
+创建时间   {date} {time}
+最后更新   {date} {time}
 ```
 
-**示例输出 (Rule 373):**
+**Threshold truncation**: Plaintext truncates at 60 chars with `...`; HTML never truncates data — UI shows truncated text with click-to-expand.
 
-```
-规则名称    房间丨万州撞大胡丨丨丨辅助丨莫
-规则ID      373
-数据源      用户房间登录风控数据源
+## Implementation Notes
 
-基础条件①
-  游戏ID(game_id)      等于      265
-  且
-  房间ID(room_id)      等于      13555
-  且
-  客户端IPv4(client_ipv4)      不为空
-
-生效时间③
-  00:00:00 - 23:59:59
-
-规则说明
-  
-
-创建人    莫晓波(moxb2705)
-创建时间   2024-11-21 10:55:17
-最后更新   2025-06-12 22:00:22
-```
+- `strategies` field contains complex nested trees; handle both `base` and `additional` arrays
+- Null `threshold` is normal for operators like "不为空" (NOT_NULL) — render as empty string
+- Field value types: `NUMBER`, `STRING`, etc. — `valueTypeName` provides Chinese display names
+- Disabled rules (`disabled: true`) are filtered server-side via `disabled=false` query param
