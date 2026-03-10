@@ -133,13 +133,16 @@ python main.py html -o /path/to/output.html
 
 ```
 .
-├── config.py          # Configuration management
-├── api_client.py      # API client for rule engine
-├── translator.py      # Rule translation logic (ASCII tree renderer)
-├── html_exporter.py   # Interactive HTML report generator
-├── main.py            # Command-line interface
-├── requirements.txt   # Python dependencies
-├── .env.example       # Environment template
+├── ruleengine/            # Core package
+│   ├── __init__.py
+│   ├── config.py          # Configuration management (env vars)
+│   ├── api_client.py      # API client for rule engine
+│   ├── translator.py      # Rule translation logic (ASCII tree renderer)
+│   └── html_exporter.py   # Interactive HTML report generator
+├── main.py                # Command-line interface
+├── requirements.txt       # Python dependencies
+├── .env.example           # Environment template
+├── LICENSE
 └── .github/
     └── copilot-instructions.md  # AI assistant instructions
 ```
@@ -156,11 +159,13 @@ These are configured in `.env` file.
 
 ## Architecture
 
-### 1. API Client (`api_client.py`)
+### 1. API Client (`ruleengine/api_client.py`)
+
 - `get_rule_list()`: Fetch paginated rule list
 - `get_rule_detail()`: Fetch detailed rule configuration
 
-### 2. Translator (`translator.py`)
+### 2. Translator (`ruleengine/translator.py`)
+
 - `RuleTranslator`: Main translation engine
   - Extracts fields from API response
   - Formats conditions and metadata
@@ -168,12 +173,13 @@ These are configured in `.env` file.
   - Recursively parses condition nodes
   - Converts to human-readable format
 
-### 3. HTML Exporter (`html_exporter.py`)
+### 3. HTML Exporter (`ruleengine/html_exporter.py`)
+
 - `HtmlExporter.generate(rules_data)`: 生成完整 HTML 字符串
 - `_render_card()`: 单条规则卡片 HTML（含 header-top + header-meta 两行布局）
 - `_render_leaf()`: 叶节点条件行，含阈值折叠 wrapper
 - `_css()`: 所有内联样式
-- `_js()`: `toggleCard`, `expandAll`, `collapseAll`, `filterCards`, `toggleThreshold`, `toggleThresholdCollapse`
+- `_js()`: `toggleCard`, `expandAll`, `collapseAll`, `applyFilters`, `toggleThreshold`, `toggleThresholdCollapse`
 
 ### 4. Main Entry Point (`main.py`)
 - CLI interface with subcommands

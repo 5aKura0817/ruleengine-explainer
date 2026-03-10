@@ -4,11 +4,13 @@ Rule Engine Explainer - Main entry point
 Translates rule engine API data into human-readable format
 """
 
-from api_client import APIClient
-from translator import RuleTranslator
-from html_exporter import HtmlExporter
 import sys
 from datetime import datetime
+
+from ruleengine.api_client import APIClient
+from ruleengine.html_exporter import HtmlExporter
+from ruleengine.translator import RuleTranslator
+
 
 def translate_rule(rule_id: int) -> None:
     """Fetch and translate a single rule"""
