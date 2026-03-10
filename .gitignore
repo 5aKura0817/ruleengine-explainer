@@ -50,8 +50,4 @@ htmlcov/
 /tmp/
 
 # Generated reports and exports
-rules_report.html
-*_report_*.html
-all_enabled_rules.txt
-rules_export_*.txt
-all_rules_export_*.txt
+output/*
